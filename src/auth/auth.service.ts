@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, CACHE_MANAGER } from '@nestjs/common';
 import { UserService } from '../users/users.service';
 import { User } from '../users/entities/user.entity';
 import RefreshToken from './entities/refresh-token.entity';
+import { Cache } from 'cache-manager'
 import { sign, verify } from 'jsonwebtoken';
 import * as argon2 from "argon2";
 
@@ -9,7 +10,7 @@ import * as argon2 from "argon2";
 export class AuthService {
   private refreshTokens: RefreshToken[] = [];
 
-  constructor(private readonly userService: UserService) { }
+  constructor(private readonly userService: UserService, @Inject(CACHE_MANAGER) private cacheManager: Cache) { }
 
   async refresh(refreshStr: string): Promise<string | undefined> {
     const refreshToken = await this.retrieveRefreshToken(refreshStr);
@@ -47,16 +48,24 @@ export class AuthService {
 
   async login(email: string, password: string, values: { userAgent: string; ipAddress: string },): Promise<{ accessToken: string; refreshToken: string } | undefined> {
 
-    const user = await this.userService.findByEmail(email);
+    let user: User = await this.cacheManager.get('email');
     if (!user) {
-      console.log("User Not Found!")
-      return undefined;
+      user = await this.userService.findByEmail(email);
+      if (!user) {
+        console.log("User Not Found!")
+        return undefined;
+      }
+      // verify your user -- use argon2 for password hashing!!
+      console.log("DB User", user)
+      await this.cacheManager.set("email", user, {
+        ttl: 10,
+      })
+    } else {
+      console.log("CACHED:", user)
     }
-    // verify your user -- use argon2 for password hashing!!
-    console.log("Verify Pass",password.length)
-    const match = await argon2.verify(user.password,password.trim())
-    if(!match){
-      console.log("Verify Failed",password)
+    const match = await argon2.verify(user.password, password.trim())
+    if (!match) {
+      console.log("Verify Failed", password)
       return undefined;
     }
 
@@ -91,7 +100,7 @@ export class AuthService {
     };
   }
 
-  async logout(refreshStr): Promise<void> {
+  async logout(refreshStr: string): Promise<void> {
     const refreshToken = await this.retrieveRefreshToken(refreshStr);
 
     if (!refreshToken) {

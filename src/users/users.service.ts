@@ -27,7 +27,7 @@ export class UserService {
   ];
 
   findByEmail(email: string): Promise<User | undefined> {
-    const user = this.users.find((user) => user.email === email);
+   const user = this.users.find((user) => user.email === email);
     if (user) {
       return Promise.resolve(user);
     }
